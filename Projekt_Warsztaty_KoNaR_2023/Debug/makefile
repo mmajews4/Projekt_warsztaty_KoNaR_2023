@@ -60,8 +60,8 @@ all: main-build
 main-build: Projekt_warsztaty_KoNaR_2023.elf secondary-outputs
 
 # Tool invocations
-Projekt_warsztaty_KoNaR_2023.elf Projekt_warsztaty_KoNaR_2023.map: $(OBJS) $(USER_OBJS) C:\Users\Acer\Desktop\Projekty_Git\Projekt_Warsztaty_KoNaR_2023\STM32L476RGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "Projekt_warsztaty_KoNaR_2023.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Acer\Desktop\Projekty_Git\Projekt_Warsztaty_KoNaR_2023\STM32L476RGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Projekt_warsztaty_KoNaR_2023.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
+Projekt_warsztaty_KoNaR_2023.elf Projekt_warsztaty_KoNaR_2023.map: $(OBJS) $(USER_OBJS) C:\Users\Acer\Desktop\Projekty_Git\Projekt_Warsztaty_KoNaR\Projekt_Warsztaty_KoNaR_2023\STM32L476RGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Projekt_warsztaty_KoNaR_2023.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\Acer\Desktop\Projekty_Git\Projekt_Warsztaty_KoNaR\Projekt_Warsztaty_KoNaR_2023\STM32L476RGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Projekt_warsztaty_KoNaR_2023.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

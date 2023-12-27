@@ -78,58 +78,67 @@ int16_t Accel_X_RAW,Accel_Y_RAW,Accel_Z_RAW;
 float Ax,Ay,Az;
 int16_t Gyro_X_RAW,Gyro_Y_RAW,Gyro_Z_RAW;
 float Gx,Gy,Gz;
-uint8_t buffer[128];
+uint8_t buffer[6];
+uint8_t string_out[128];
 
 void MPU6050_Init(void)
 {
-    uint8_t check, data;
-    HAL_I2C_Mem_Read(&hi2c1,MPU6050_ADDR,WHO_AM_I_REG,1,&check,1,100);
-    if(check == 104)
+    uint8_t check, reg;
+    HAL_I2C_Mem_Read(&hi2c1,MPU6050_ADDR,WHO_AM_I_REG,1,&check,1,HAL_MAX_DELAY);
+    if(check == 0b01101000)
     {
-        data = 0x07;
-        HAL_I2C_Mem_Write(&hi2c1,MPU6050_ADDR,SMPLRT_DIV_REG,1,&data,1,50);
-        HAL_Delay(50);
-        data = 0x00;
-        HAL_I2C_Mem_Write(&hi2c1,MPU6050_ADDR,ACCEL_CONFIG_REG,1,&data,1,50);
-        HAL_Delay(50);
-        data = 0x00;
-        HAL_I2C_Mem_Write(&hi2c1,MPU6050_ADDR,GYRO_CONFIG_REG,1,&data,1,50);
-        HAL_Delay(50);
-        data = 0;
-        HAL_I2C_Mem_Write(&hi2c1,MPU6050_ADDR,PWR_MGMT_1_REG,1,&data,1,50);
-        HAL_Delay(50);
+        reg = 0x07;
+        HAL_I2C_Mem_Write(&hi2c1,MPU6050_ADDR,SMPLRT_DIV_REG,1,&reg,1,HAL_MAX_DELAY);
+
+        reg = 0x00;
+        HAL_I2C_Mem_Write(&hi2c1,MPU6050_ADDR,ACCEL_CONFIG_REG,1,&reg,1,HAL_MAX_DELAY);
+
+        reg = 0x00;
+        HAL_I2C_Mem_Write(&hi2c1,MPU6050_ADDR,GYRO_CONFIG_REG,1,&reg,1,HAL_MAX_DELAY);
+
+        reg = 0;
+        HAL_I2C_Mem_Write(&hi2c1,MPU6050_ADDR,PWR_MGMT_1_REG,1,&reg,1,HAL_MAX_DELAY);
+
     }
 }
 
 void MPU6050_Read_Accel(void)
 {
-    uint8_t recData[6];
-    memset(recData, 0, sizeof(recData));
+    Accel_X_RAW = (int16_t)(buffer[0] << 8 | buffer[1]);
+    Accel_Y_RAW = (int16_t)(buffer[2] << 8 | buffer[3]);
+    Accel_Z_RAW = (int16_t)(buffer[4] << 8 | buffer[5]);
 
-    HAL_I2C_Mem_Read(&hi2c1,MPU6050_ADDR,ACCEL_XOUT_H_REG,I2C_MEMADD_SIZE_8BIT,recData,6,100);
-
-    Accel_X_RAW = (int16_t)(recData[0] << 8 | recData[1]);
-    Accel_Y_RAW = (int16_t)(recData[2] << 8 | recData[3]);
-    Accel_Z_RAW = (int16_t)(recData[4] << 8 | recData[5]);
-
-    Ax = Accel_X_RAW / 16384.0;		// Zamiana raw value na g
-    Ay = Accel_Y_RAW / 16384.0;
-    Az = Accel_Z_RAW / 16384.0;
+    Ax = Accel_X_RAW / 16384.f;		// Zamiana raw value na g
+    Ay = Accel_Y_RAW / 16384.f;
+    Az = Accel_Z_RAW / 16384.f;
 }
 
 void MPU6050_Read_Gyro(void)
 {
-	uint8_t recData[6];
-	memset(recData, 0, sizeof(recData));
-	HAL_I2C_Mem_Read(&hi2c1,MPU6050_ADDR,GYRO_XOUT_H_REG,I2C_MEMADD_SIZE_8BIT,recData,6,100);
+	uint8_t buffer[6];
+	HAL_I2C_Mem_Read(&hi2c1,MPU6050_ADDR,GYRO_XOUT_H_REG,I2C_MEMADD_SIZE_8BIT,buffer,6,100);
 
-    Gyro_X_RAW = (int16_t)(recData[0] << 8 | recData[1]);
-    Gyro_Y_RAW = (int16_t)(recData[2] << 8 | recData[3]);
-    Gyro_Z_RAW = (int16_t)(recData[4] << 8 | recData[5]);
+    Gyro_X_RAW = (int16_t)(buffer[0] << 8 | buffer[1]);
+    Gyro_Y_RAW = (int16_t)(buffer[2] << 8 | buffer[3]);
+    Gyro_Z_RAW = (int16_t)(buffer[4] << 8 | buffer[5]);
 
 	Gx = Gyro_X_RAW/131.0;		// Zamiana raw value na °/s
 	Gy = Gyro_Y_RAW/131.0;
 	Gz = Gyro_Z_RAW/131.0;
+}
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	if(GPIO_Pin==INTERRUPT_Pin) {
+	    HAL_I2C_Mem_Read_IT(&hi2c1,MPU6050_ADDR,ACCEL_XOUT_H_REG,1,buffer,6);
+	}
+}
+
+void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
+	if(hi2c->Instance==I2C1) {
+		MPU6050_Read_Accel();
+//		MPU6050_Read_Gyro();
+		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+	}
 }
 
 /* USER CODE END 0 */
@@ -174,10 +183,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  MPU6050_Read_Accel();
-	  MPU6050_Read_Gyro();
-	  snprintf((char *)buffer, sizeof(buffer), "Accel x: %.3fg y: %.3fg z: %.3fg   Gyro x: %.3f°/s y: %.3f°/s z: %.3f°/s\n\r", Ax, Ay, Az, Gx, Gy, Gz);
-	  HAL_UART_Transmit(&huart2,buffer, strlen((char *) buffer), HAL_MAX_DELAY);
+	  snprintf((char *)string_out, sizeof(string_out), "Accel x: %.3fg y: %.3fg z: %.3fg"/*   Gyro x: %.3f°/s y: %.3f°/s z: %.3f°/s\n\r"*/, Ax, Ay, Az/*, Gx, Gy, Gz*/);
+	  HAL_UART_Transmit(&huart2,string_out, strlen((char *) string_out), HAL_MAX_DELAY);
 
     /* USER CODE END WHILE */
 
