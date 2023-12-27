@@ -56,6 +56,8 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+TIM_HandleTypeDef htim3;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -67,6 +69,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -78,8 +81,18 @@ int16_t Accel_X_RAW,Accel_Y_RAW,Accel_Z_RAW;
 float Ax,Ay,Az;
 int16_t Gyro_X_RAW,Gyro_Y_RAW,Gyro_Z_RAW;
 float Gx,Gy,Gz;
-uint8_t buffer[6];
+uint8_t buffer_a[6], buffer_g[6];
 uint8_t string_out[128];
+
+static volatile uint8_t flag_tim_13hz = 0;
+static volatile uint8_t flag_acc = 0;
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+	if(htim==&htim3){
+		HAL_GPIO_TogglePin(GPIOA, INTERRUPT_TIM_Pin);
+		flag_tim_13hz = 1;
+	}
+}
 
 void MPU6050_Init(void)
 {
@@ -87,6 +100,8 @@ void MPU6050_Init(void)
     HAL_I2C_Mem_Read(&hi2c1,MPU6050_ADDR,WHO_AM_I_REG,1,&check,1,HAL_MAX_DELAY);
     if(check == 0b01101000)
     {
+    	//HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+
         reg = 0x07;
         HAL_I2C_Mem_Write(&hi2c1,MPU6050_ADDR,SMPLRT_DIV_REG,1,&reg,1,HAL_MAX_DELAY);
 
@@ -104,9 +119,9 @@ void MPU6050_Init(void)
 
 void MPU6050_Read_Accel(void)
 {
-    Accel_X_RAW = (int16_t)(buffer[0] << 8 | buffer[1]);
-    Accel_Y_RAW = (int16_t)(buffer[2] << 8 | buffer[3]);
-    Accel_Z_RAW = (int16_t)(buffer[4] << 8 | buffer[5]);
+    Accel_X_RAW = (int16_t)(buffer_a[0] << 8 | buffer_a[1]);
+    Accel_Y_RAW = (int16_t)(buffer_a[2] << 8 | buffer_a[3]);
+    Accel_Z_RAW = (int16_t)(buffer_a[4] << 8 | buffer_a[5]);
 
     Ax = Accel_X_RAW / 16384.f;		// Zamiana raw value na g
     Ay = Accel_Y_RAW / 16384.f;
@@ -115,12 +130,9 @@ void MPU6050_Read_Accel(void)
 
 void MPU6050_Read_Gyro(void)
 {
-	uint8_t buffer[6];
-	HAL_I2C_Mem_Read(&hi2c1,MPU6050_ADDR,GYRO_XOUT_H_REG,I2C_MEMADD_SIZE_8BIT,buffer,6,100);
-
-    Gyro_X_RAW = (int16_t)(buffer[0] << 8 | buffer[1]);
-    Gyro_Y_RAW = (int16_t)(buffer[2] << 8 | buffer[3]);
-    Gyro_Z_RAW = (int16_t)(buffer[4] << 8 | buffer[5]);
+    Gyro_X_RAW = (int16_t)(buffer_g[0] << 8 | buffer_g[1]);
+    Gyro_Y_RAW = (int16_t)(buffer_g[2] << 8 | buffer_g[3]);
+    Gyro_Z_RAW = (int16_t)(buffer_g[4] << 8 | buffer_g[5]);
 
 	Gx = Gyro_X_RAW/131.0;		// Zamiana raw value na °/s
 	Gy = Gyro_Y_RAW/131.0;
@@ -129,15 +141,22 @@ void MPU6050_Read_Gyro(void)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	if(GPIO_Pin==INTERRUPT_Pin) {
-	    HAL_I2C_Mem_Read_IT(&hi2c1,MPU6050_ADDR,ACCEL_XOUT_H_REG,1,buffer,6);
+		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 	}
 }
 
 void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
+
 	if(hi2c->Instance==I2C1) {
-		MPU6050_Read_Accel();
-//		MPU6050_Read_Gyro();
-		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+		if(flag_acc){
+			MPU6050_Read_Accel();
+			HAL_I2C_Mem_Read_IT(&hi2c1,MPU6050_ADDR,GYRO_XOUT_H_REG,1,buffer_g,6);
+			flag_acc = 0;
+		} else {
+			MPU6050_Read_Gyro();
+			HAL_I2C_Mem_Read_IT(&hi2c1,MPU6050_ADDR,ACCEL_XOUT_H_REG,1,buffer_a,6);
+			flag_acc = 1;
+		}
 	}
 }
 
@@ -173,9 +192,16 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_I2C1_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 
+  HAL_TIM_Base_Start_IT(&htim3);
+  HAL_NVIC_DisableIRQ(INTERRUPT_EXTI_IRQn);
   MPU6050_Init();
+  HAL_NVIC_EnableIRQ(INTERRUPT_EXTI_IRQn);
+
+  // dummy read
+  HAL_I2C_Mem_Read_IT(&hi2c1,MPU6050_ADDR,GYRO_XOUT_H_REG,1,buffer_g,6);
 
   /* USER CODE END 2 */
 
@@ -183,8 +209,13 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  snprintf((char *)string_out, sizeof(string_out), "Accel x: %.3fg y: %.3fg z: %.3fg"/*   Gyro x: %.3f°/s y: %.3f°/s z: %.3f°/s\n\r"*/, Ax, Ay, Az/*, Gx, Gy, Gz*/);
-	  HAL_UART_Transmit(&huart2,string_out, strlen((char *) string_out), HAL_MAX_DELAY);
+
+	  if(flag_tim_13hz){
+		  flag_tim_13hz = 0;
+		  snprintf((char *)string_out, sizeof(string_out), "Accel x: %.3fg y: %.3fg z: %.3fg   Gyro x: %.3f°/s y: %.3f°/s z: %.3f°/s\n\r", Ax, Ay, Az, Gx, Gy, Gz);
+		  HAL_UART_Transmit_IT(&huart2,string_out, strlen((char *) string_out));
+	  }
+
 
     /* USER CODE END WHILE */
 
@@ -291,6 +322,54 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 7999;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 908;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_OC_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_TIMING;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_OC_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -358,11 +437,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB10 */
-  GPIO_InitStruct.Pin = GPIO_PIN_10;
+  /*Configure GPIO pins : INTERRUPT_TIM_Pin INTERRUPT_Pin */
+  GPIO_InitStruct.Pin = INTERRUPT_TIM_Pin|INTERRUPT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
