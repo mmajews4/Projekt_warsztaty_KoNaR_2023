@@ -79,6 +79,11 @@ static void MX_TIM2_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+/* Czujnik MPU6050
+ * Nie użyłem RTOSa ponieważ uważam że do tak prostego programu skomplikował
+ * by on niepotrzebnie kod zwłaszcza z timerami
+ */
+
 int16_t Accel_X_RAW,Accel_Y_RAW,Accel_Z_RAW;
 float Ax,Ay,Az;
 int16_t Gyro_X_RAW,Gyro_Y_RAW,Gyro_Z_RAW;
@@ -105,8 +110,6 @@ void MPU6050_Init(void)
     HAL_I2C_Mem_Read(&hi2c1,MPU6050_ADDR,WHO_AM_I_REG,1,&check,1,HAL_MAX_DELAY);
     if(check == 0b01101000)
     {
-    	//HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-
         reg = 0x07;
         HAL_I2C_Mem_Write(&hi2c1,MPU6050_ADDR,SMPLRT_DIV_REG,1,&reg,1,HAL_MAX_DELAY);
 
@@ -152,7 +155,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
 
-	if(hi2c->Instance==I2C1) {
+	if(hi2c->Instance==I2C1) {	// Czytam na zmianę accel i gyro
 		if(flag_acc){
 			MPU6050_Read_Accel();
 			HAL_I2C_Mem_Read_IT(&hi2c1,MPU6050_ADDR,GYRO_XOUT_H_REG,1,buffer_g,6);
@@ -216,7 +219,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
 	  if(flag_tim_11hz){
 		  flag_tim_11hz = 0;
 		  snprintf((char *)string_out, sizeof(string_out), "Accel x: %.3fg y: %.3fg z: %.3fg   Gyro x: %.3f°/s y: %.3f°/s z: %.3f°/s\n\r", Ax, Ay, Az, Gx, Gy, Gz);
